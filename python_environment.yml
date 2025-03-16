@@ -1,0 +1,18 @@
+name: conda_nuclei_311
+channels:
+  - defaults
+dependencies:
+  - gudhi
+  - matplotlib
+  - numpy==1.26.4
+  - pandas
+  - python=3.11
+  - scikit-image
+  - scikit-learn
+  - scipy
+  - seaborn
+  - napari
+  - ipython
+  - notebook
+  - jupyter
+  - xarray
