@@ -21,6 +21,7 @@ import itertools
 from tqdm import tqdm
 import numpy as np
 import pandas as pd
+from pathlib import Path
 import scipy.stats as scistats
 
 from sklearn.model_selection import GridSearchCV
@@ -31,6 +32,7 @@ from sklearn.svm import SVC
 from sklearn.decomposition import PCA
 from sklearn import metrics
 from sklearn.preprocessing import LabelEncoder, MinMaxScaler, StandardScaler
+from sklearn.metrics import precision_score, recall_score, balanced_accuracy_score
 
 from gudhi.representations import PersistenceImage, BettiCurve, Entropy
 
@@ -41,6 +43,8 @@ from typing import Union
 
 import hashlib
 
+from .inputreader import read_persistence_files
+
 warnings.filterwarnings("error")
 
 # %%
@@ -48,6 +52,7 @@ warnings.filterwarnings("error")
 
 def sanititze_persistencediagram(pers: ArrayLike,
         min_pers: float = 1e-15,
+        max_birth: float = np.inf,
         set_infval: Union[None, float] = None) -> np.ndarray:
     """Sanitize the persistence diagram"""
     pers = np.array(pers)
@@ -59,13 +64,26 @@ def sanititze_persistencediagram(pers: ArrayLike,
             pers[pers[:,1] == np.inf, 1] = set_infval
         else:
             raise ValueError('Invalid value for set_infval, needs to be None or a float')
+
+    if min_pers is None:
+        min_pers = 0
+    if max_birth is None:
+        max_birth = np.inf
+
+    # remove all pairs with persistence smaller than min_pers
+    pers = pers[np.abs(pers[:, 1] - pers[:, 0]) >= min_pers, :]
+    # remove all pairs with birth larger than min_birth
+    pers = pers[pers[:, 0] <= max_birth, :]
     return pers
 
 def sanitize_persistence(diags: List[np.ndarray],
         min_pers: float = 1e-15,
+        max_birth: float = np.inf,
         set_infval: Union[None, float] = None) -> List[np.ndarray]:
     """Sanitize the persistence diagrams"""
-    return [sanititze_persistencediagram(pers, min_pers, set_infval) for pers in diags]
+    return [sanititze_persistencediagram(pers,
+                min_pers, max_birth, set_infval)
+            for pers in diags]
 
 
 
@@ -120,19 +138,19 @@ def persistence_statistics(dgms: ArrayLike,
                         'kurtosis', 'mad',
                         '10quantile', '25quantile',
                         'median', '75quantile', '90quantile']
-    statistics_funcs = [np.min,
-                        np.max,
-                        lambda x: np.max(x) - np.min(x),
-                        np.mean,
-                        np.std,
+    statistics_funcs = [np.nanmin,
+                        np.nanmax,
+                        lambda x: np.nanmax(x) - np.nanmin(x),
+                        np.nanmean,
+                        np.nanstd,
                         tryskew,
                         trykurtosis,
                         scistats.median_abs_deviation,
-                        lambda x: np.quantile(x, q=0.1),
-                        lambda x: np.quantile(x, q=0.25),
-                        lambda x: np.quantile(x, q=0.5),
-                        lambda x: np.quantile(x, q=0.75),
-                        lambda x: np.quantile(x, q=0.9)
+                        lambda x: np.nanquantile(x, q=0.1),
+                        lambda x: np.nanquantile(x, q=0.25),
+                        lambda x: np.nanquantile(x, q=0.5),
+                        lambda x: np.nanquantile(x, q=0.75),
+                        lambda x: np.nanquantile(x, q=0.9)
                         ]
 
     # if not(lifespan) and isinstance(dgms, list):
@@ -144,7 +162,7 @@ def persistence_statistics(dgms: ArrayLike,
         else:
             if lifespan:
                 for i, sfunc in enumerate(statistics_funcs):
-                    stats[j, i] = sfunc((dgm[:, 1] - dgm[:, 0]).ravel())
+                    stats[j, i] = sfunc(np.abs(dgm[:, 1] - dgm[:, 0]).ravel())
             else:
                 for i, sfunc in enumerate(statistics_funcs):
                     stats[j, i] = sfunc(dgm.ravel())
@@ -343,15 +361,19 @@ def combine_data(key, all_data):
     """
     if not isinstance(key[1], list):
         X_train = np.hstack([all_data[(key[0], dim, key[1], 'train')]
-                             for dim in range(3) if (key[0], dim, key[1], 'train') in all_data.keys()])
+            for dim in range(3)
+            if (key[0], dim, key[1], 'train') in all_data.keys()])
         X_test = np.hstack([all_data[(key[0], dim, key[1], 'test')]
-                            for dim in range(3) if (key[0], dim, key[1], 'test') in all_data.keys()])
+            for dim in range(3)
+            if (key[0], dim, key[1], 'test') in all_data.keys()])
 
     else:
         X_train = np.hstack([all_data[(key[0], dim, keyi, 'train')]
-                             for keyi in key[1] for dim in range(3) if (key[0], dim, keyi, 'train') in all_data.keys()])
+            for keyi in key[1] for dim in range(3)
+            if (key[0], dim, keyi, 'train') in all_data.keys()])
         X_test = np.hstack([all_data[(key[0], dim, keyi, 'test')]
-                            for keyi in key[1] for dim in range(3) if (key[0], dim, keyi, 'train') in all_data.keys()])
+            for keyi in key[1] for dim in range(3)
+            if (key[0], dim, keyi, 'train') in all_data.keys()])
 
     return (X_train, X_test)
 
@@ -453,34 +475,51 @@ def grid_search_noscaling(X: np.ndarray,
 
     parameters4red = {
         'clf__C': [0.1, 1.0, 2],
-        'clf__kernel': ['rbf', 'poly'],
+        'clf__kernel': ['linear', 'rbf', 'poly'],
         # 'clf__gamma': [0.01, 0.1, 1.0],
     }
 
-    if min_features_samples > 2:
-        parameters1red['reduction__n_components'] = [None, 2]
-        parameters2red['reduction__n_components'] = [None, 2]
-        parameters4red['reduction__n_components'] = [None, 2]
+    if min_features_samples > 3:
+        parameters1red['reduction__n_components'] = [None, 3]
+        parameters2red['reduction__n_components'] = [None, 3]
+        parameters4red['reduction__n_components'] = [None, 3]
 
         if min_features_samples > 10:
-            parameters1red['reduction__n_components'] = [None, 2, 10]
-            parameters2red['reduction__n_components'] = [None, 2, 10]
-            parameters4red['reduction__n_components'] = [None, 2, 10]
+            parameters1red['reduction__n_components'] = [None, 3, 10]
+            parameters2red['reduction__n_components'] = [None, 3, 10]
+            parameters4red['reduction__n_components'] = [None, 3, 10]
+        
+        if min_features_samples > 500:
+            parameters1red['reduction__n_components'] = [3, 10, 50]
+            parameters2red['reduction__n_components'] = [3, 10, 50]
+            parameters4red['reduction__n_components'] = [3, 10, 50]
     
-    pars = [parameters1,
-            parameters1red,
-            parameters2red,
-            parameters3,
-            parameters4,
-            parameters4red
-            ]
-    pips = [pipeline1,
-            pipeline1red,
-            pipeline2red,
-            pipeline3,
-            pipeline4,
-            pipeline4red
-            ]
+    if min_features_samples > 500:
+        pars = [parameters1,
+                parameters1red,
+                parameters2red,
+                parameters4red
+                ]
+        pips = [pipeline1,
+                pipeline1red,
+                pipeline2red,
+                pipeline4red
+                ]
+    else:
+        pars = [parameters1,
+                parameters1red,
+                parameters2red,
+                parameters3,
+                parameters4,
+                parameters4red
+                ]
+        pips = [pipeline1,
+                pipeline1red,
+                pipeline2red,
+                pipeline3,
+                pipeline4,
+                pipeline4red
+                ]
 
     if verbose > 0:
         print("starting Gridsearch")
@@ -509,92 +548,11 @@ def grid_search_noscaling(X: np.ndarray,
     return gs
 
 # %%
-# Clustering methods
-
-def majority_labels(labels_true: ArrayLike, labels_pred:ArrayLike,
-                    function: Callable = metrics.accuracy_score,
-                    function_b: Callable = metrics.normalized_mutual_info_score) -> ArrayLike:
-    """Change labels from predicited labels to true labels such that
-    we remove unnecessary labels. Maximizes the score in function.
-
-    Parameters
-    ----------
-    labels_true : array-like vector
-        True labels
-    labels_pred : array-like vector
-        Cluster labels, which we want to transform to adhere
-        closer to the true labels.
-    function : callable returing float, optional
-        scoring method to be maximized, where higher score is better,
-        by default metrics.accuracy_score
-    function_b : callable returing float, optional
-        scoring method to be maximized if function are the same, where higher score is better,
-        by default metrics.accuracy_score
-
-    Returns
-    -------
-    array_like (same size as labels_true)
-        The new labels maximizing the function
-
-    Yields
-    ------
-    _type_
-        _description_
-
-    Raises
-    ------
-    ValueError
-        If we can't find a reasonable assignment.
-    """
-
-    assert np.all(np.shape(labels_true) == np.shape(labels_pred))
-
-    num_clusters_pred = len(np.unique(labels_pred))
-    clusters_true = np.unique(labels_true)
-
-    # now go through all possible assignments to pick the
-    # best one
-    max_function = 0
-    max_function_b = 0
-
-    max_labels = None
-    max_assignment = None
-    for assignment in itertools.product(clusters_true,
-                                        repeat=num_clusters_pred):
-        # exclude the assignment if not all true clusters are represented
-        if len(np.unique(assignment)) != len(clusters_true):
-            continue
-
-        # now do the assignment for the values in the array
-        tmp_labels = np.zeros_like(labels_true)
-        for i, lbl_pred in enumerate(np.unique(labels_pred)):
-            tmp_labels[labels_pred == lbl_pred] = assignment[i]
-
-        tmp_function = function(labels_true, tmp_labels)
-        tmp_function_b = function_b(labels_true, tmp_labels)
-        # now check if its maximal
-        if max_function < tmp_function:
-            max_function = tmp_function
-            max_labels = tmp_labels.copy()
-            max_assignment = assignment
-            max_function_b = tmp_function_b
-
-        elif max_function == tmp_function:
-            if max_function_b < tmp_function_b:
-                max_function = tmp_function
-                max_labels = tmp_labels.copy()
-                max_assignment = assignment
-                max_function_b = tmp_function_b
-
-    if ((len(np.unique(max_assignment)) != len(clusters_true))
-            or (max_function == 0)):
-        raise ValueError('The assignment did not yield an/a good assignment!')
-
-    return max_labels
-
-# %%
 # Classification
-def compute_vectorizations_all(labels, pers_all, resolution_pi=20, bandwidth=4, resolution_bc=250):
+def compute_vectorizations_all(labels, pers_all,
+        resolution_pi=20, bandwidth=4, resolution_bc=250,
+        persistence_threshold=None,
+        birth_threshold=None):
     assert 2 in pers_all.keys()
     assert 3 in pers_all.keys()
 
@@ -610,7 +568,9 @@ def compute_vectorizations_all(labels, pers_all, resolution_pi=20, bandwidth=4, 
         for dim in range(len(pers_all[prefix])):
             data = pers_all[prefix][dim]
             # data = [x[x[:, 1] != np.inf, :] for x in data]
-            data = sanitize_persistence(data)
+            data = sanitize_persistence(data,
+                min_pers=persistence_threshold,
+                max_birth=birth_threshold)
 
             ecc_train.extend([data[i] for i in all_idx])
             ecc_lens_train.append(len([data[i] for i in all_idx]))
@@ -676,7 +636,9 @@ def compute_vectorizations_all(labels, pers_all, resolution_pi=20, bandwidth=4, 
 
 
 def compute_vectorizations_traintest(invariant, prefix_dim, labels, pers_all, train_idx, test_idx,
-            resolution_pi=20, bandwidth=4, resolution_bc=250, return_grid=False):
+            resolution_pi=20, bandwidth=4, resolution_bc=250, return_grid=False,
+            persistence_threshold=None,
+            birth_threshold=None):
     assert 2 in pers_all.keys()
     assert 3 in pers_all.keys()
     assert invariant in ['stat', 'ent', 'bc', 'pi', 'ecc', 'all']
@@ -696,8 +658,11 @@ def compute_vectorizations_traintest(invariant, prefix_dim, labels, pers_all, tr
 
         for inv in ['stat', 'ent', 'bc', 'pi', 'ecc']:
             Xt, Xt2, _, _ = compute_vectorizations_traintest(inv, prefix_dim, labels,
-                                    pers_all, train_idx, test_idx,
-                                    resolution_pi, bandwidth, resolution_bc)
+                pers_all, train_idx, test_idx,
+                resolution_pi, bandwidth, resolution_bc,
+                return_grid=False,
+                persistence_threshold=persistence_threshold,
+                birth_threshold=birth_threshold)
             X_train.append(Xt.copy())
             if len(test_idx) > 0:
                 X_test.append(Xt2.copy())
@@ -711,7 +676,8 @@ def compute_vectorizations_traintest(invariant, prefix_dim, labels, pers_all, tr
         for dim in range(len(pers_all[prefix_dim])):
             data = pers_all[prefix_dim][dim]
             # data = [x[x[:, 1] != np.inf, :] for x in data]
-            data = sanitize_persistence(data)
+            data = sanitize_persistence(data, min_pers=persistence_threshold,
+                                        max_birth=birth_threshold)
 
             if invariant == 'stat': 
                 persstats, _ = persistence_statistics(data, return_names=True, lifespan=False)
@@ -846,3 +812,224 @@ def compute_vectorizations_traintest(invariant, prefix_dim, labels, pers_all, tr
         return X_train, X_test, y_train, y_test, grid
     else:
         return X_train, X_test, y_train, y_test
+
+
+
+def get_all_classifications(preprocessing,
+    persfolder, savepath, labels,
+    microscope=None,
+    runs=10,
+    train_percent='70',
+    run_start=0,
+    persistence_threshold=None,
+    birth_threshold=None,
+    nameappend='',
+    saveasfile=True,
+    n_jobs=6,
+    verbatim=False):
+    """
+    Classify persistence diagrams using vectorizations and machine learning.
+
+    This function processes persistence diagrams, generates vectorizations,
+    and performs classification using machine learning models.
+    It supports multiple runs, train-test splits, and various thresholds for persistence and birth values.
+
+    Args:
+        persfilename (str or pathlib.Path):
+            Path to the persistence file (.npz) containing persistence diagrams.
+        vectfolderpath (str or pathlib.Path):
+            Path to the folder where vectorization and classification results will be saved.
+        labels (pandas.DataFrame):
+            DataFrame containing labels and metadata for the dataset.
+        runs (int, optional):
+            Number of classification runs. Defaults to 10.
+        train_percent (str, optional):
+            Percentage of data to use for training (as a string). Defaults to '70'.
+        run (int, optional):
+            Starting run index. Defaults to 0.
+        persistence_threshold (float, optional):
+            Threshold for persistence values. Defaults to None.
+        birth_threshold (float, optional):
+            Threshold for birth values. Defaults to None.
+        nameappend (str, optional):
+            String to append to output filenames. Defaults to ''.
+
+    Returns:
+        None: Results are saved to a CSV file in the specified vectorization folder.
+    """
+    if Path(persfolder).is_dir():
+        pers_all, pers_keys = read_persistence_files(persfolder,
+            preprocessing=preprocessing,
+            return_keys=True)
+        filename = np.unique([f.name[f.name.index('persistence'):]
+                              for f in pers_keys[:,0] if 'persistence' in f.name])
+        if len(filename) > 1:
+            raise ValueError('More than one persistence file found')
+        persfilename = Path(persfolder / filename[0])
+    else:
+        raise ValueError('No persistence file found')
+
+    if nameappend != '' and not nameappend.endswith('_'):
+        nameappend += '_'
+
+    if microscope is None:
+        if 'sted' in persfilename.name.lower():
+            microscope = 'sted'
+        elif 'airyscan' in persfilename.name.lower() or 'airy' in persfilename.name.lower():
+            microscope = 'airyscan'
+        else:
+            raise ValueError('Microscope not specified and not found in filename')
+
+    if run_start==0:
+        vecfile_class = Path(savepath,
+            persfilename.name.replace('persistence',
+            f'{nameappend}classification_{microscope}_traintest_runs-{runs}_perc-{train_percent}').replace('.npz', '.csv'))
+    else:
+        vecfile_class = Path(savepath,
+        persfilename.name.replace('persistence',
+        f'{nameappend}classification_{microscope}_traintest_runs-{runs}_perc-{train_percent}_runstart-{run_start}').replace('.npz', '.csv'))
+
+    print('Classification file:', vecfile_class, ',\n  reading:', persfilename.name)
+    if vecfile_class.exists() or not saveasfile:
+        print('File already exists')
+        return None
+    
+    # get the splits
+    train_test_splits = same_size_training(labels, size=2*runs, train_size=int(train_percent)/100, seed=42)
+    hashes = np.array([[compute_hash(tt[0]), compute_hash(tt[1])] for tt in train_test_splits])
+
+    # now 
+    delete_idx = []
+    for i in range(len(hashes)):
+        if hashes[i] in hashes[:i]:
+            delete_idx.append(i)
+    train_test_splits = [train_test_splits[i] for i in range(len(train_test_splits)) if i not in delete_idx]
+    train_test_splits = train_test_splits[run_start:runs]
+    del hashes
+
+    assert len(train_test_splits) == runs - run_start
+    
+    # now do the classification
+
+    results_tmp = []
+    for runk, train_test in tqdm(enumerate(train_test_splits),
+                                    total=len(train_test_splits),
+                                    smoothing=1):
+        Xt_train = [[], []]
+        Xt_test = [[], []]
+        y_train = labels[train_test[0]]
+        y_test = labels[train_test[1]]
+
+        for cond in ['stat', 'bc', 'pi', 'ent', 'ecc', 'all']:
+            for prefix_dim in [2, 3]:
+                if cond == 'all':
+                    if len(Xt_train[prefix_dim - 2]) == 0 or len(Xt_test[prefix_dim - 2]) == 0:
+                        continue
+                    # print([x.shape for x in Xt_train[prefix_dim - 2]])
+                    # print([x.shape for x in Xt_test[prefix_dim - 2]])
+                    X_train = np.hstack(Xt_train[prefix_dim - 2])
+                    X_test = np.hstack(Xt_test[prefix_dim - 2])
+
+                    # print('all', np.shape(X_train), np.shape(X_test), cond, prefix_dim)
+                else:
+                    X_train, X_test, y_train, y_test = \
+                        compute_vectorizations_traintest(cond, prefix_dim, labels, pers_all,
+                            train_test[0], train_test[1],
+                            persistence_threshold=persistence_threshold,
+                            birth_threshold=birth_threshold)
+                    # print('intermed', np.shape(X_train), np.shape(X_test), cond, prefix_dim)
+
+                    ss = StandardScaler()
+                    X_train = ss.fit_transform(X_train)
+                    X_test = ss.transform(X_test)
+
+                    # We can also use SimpleImputer etc
+                    # remove rows if they contain more than 20% of nan values
+
+                    # if np.any(np.isnan(X_train)) or np.any(np.isnan(X_test)):
+                    #     nanidx = np.all(np.isnan(X_train), axis=1)
+                    #     if np.any(nanidx):
+                    #         print('Dropping nan rows', np.sum(nanidx), cond)
+                    #         X_train = X_train[~nanidx, :]
+                    #         y_train = y_train[~nanidx]
+
+                    #     nanidx = np.all(np.isnan(X_test), axis=1)
+                    #     if np.any(nanidx):
+                    #         print('Dropping nan rows', np.sum(nanidx), cond)
+                    #         X_test = X_test[~nanidx, :]
+                    #         y_test = y_test[~nanidx]
+                    
+                    # if np.count_nonzero(np.sum(np.isnan(X_train), axis=1)) < 2:
+                    #     if np.sum(np.isnan(X_train), axis=1).max() > 10:
+                    #         # print('Dropping nan rows', np.sum(np.isnan(X_train), axis=1))
+                    #         idx_remain = ~np.any(np.isnan(X_train), axis=1)
+                    #         X_train = X_train[idx_remain, :]
+                    #         y_train = y_train[idx_remain]
+
+                    drop_col = np.unique(np.where(np.isnan(X_train))[1])
+                    if len(drop_col) > 0:
+                        print('Dropping nan columns', drop_col, cond)
+                        remaining_col = np.sum(np.isnan(X_train), axis=0) == 0
+                        X_train = X_train[:, remaining_col]
+                        X_test = X_test[:, remaining_col]
+
+                    idx_fill = np.where(np.abs(X_test) >= np.finfo(np.float32).max)
+                    X_test[idx_fill] = np.nanmean(X_train[:, np.unique(idx_fill[1])], axis=0)
+                    idx_fill = np.where(np.isnan(X_test))
+                    X_test[idx_fill] = np.nanmean(X_train[:, np.unique(idx_fill[1])], axis=0)
+
+                    if len(X_train.shape) == 0 or len(X_test.shape) == 0:
+                        print(np.shape(X_train), np.shape(X_test), cond)
+                        print(np.any(np.isnan(X_train)), np.any(np.isnan(X_test)))
+                        print('EMPTY training/test set', cond, persfilename.name)
+                        continue
+
+                    Xt_train[prefix_dim - 2].append(X_train.copy())
+                    Xt_test[prefix_dim - 2].append(X_test.copy())
+
+                # now do the Classification via GridSearch
+                if np.any(np.isnan(X_train)) or np.any(np.isnan(X_test)):
+                    print('NaN in training/test set', cond, persfilename.name)
+                    continue
+                if verbatim:
+                    print('run', run_start, ', vectorization:', cond, ', dim:', prefix_dim,
+                          ', shape:', np.shape(X_train), np.shape(X_test))
+
+                gs = grid_search_noscaling(X_train, y_train.ravel(),
+                        verbose=0, disable_tqdm=True,
+                        n_jobs=n_jobs)
+                
+                accuracy_train = gs.score(X_train, y_train.ravel())
+                # since accuracy is the same as weighted recall in this case, just ignore accuracy
+                # accuracy = gs.score(X_test, y_test.ravel())
+
+                y_pred = gs.predict(X_test)
+
+                precision = precision_score(y_test.ravel(), y_pred, average='weighted', zero_division=0)
+                recall = recall_score(y_test.ravel(), y_pred, average='weighted', zero_division=0)
+
+                if cond == 'all' and prefix_dim == 3:
+                    print('run', run_start, ', vectorization: all, acc_bal:',
+                            balanced_accuracy_score(y_test, y_pred))
+                tmp_dict = {
+                    'prefix': '_'.join(persfilename.stem.split('_')[2:]),
+                    'dim': prefix_dim,
+                    'type': cond,
+                    'accuracy_balanced': balanced_accuracy_score(y_test, y_pred),
+                    'accuracy_train': accuracy_train,
+                    'precision': precision,
+                    'recall': recall,
+                    'run': runk + run_start,
+                    'hash_train': compute_hash(train_test[0]),
+                    'hash_test': compute_hash(train_test[1])}
+                results_tmp.append(tmp_dict.copy())
+
+    if len(results_tmp) == 0:
+        print('Empty results found')
+        return None
+
+    df_classification = pd.DataFrame(results_tmp)
+    if saveasfile:
+        df_classification.to_csv(vecfile_class, index=False)
+    print(f"Finished for {persfilename}")
+    return df_classification
