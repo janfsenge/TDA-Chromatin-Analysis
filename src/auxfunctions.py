@@ -490,9 +490,9 @@ def grid_search_noscaling(X: np.ndarray,
             parameters4red['reduction__n_components'] = [None, 3, 10]
         
         if min_features_samples > 500:
-            parameters1red['reduction__n_components'] = [3, 10, 50]
-            parameters2red['reduction__n_components'] = [3, 10, 50]
-            parameters4red['reduction__n_components'] = [3, 10, 50]
+            parameters1red['reduction__n_components'] = [None, 3, 10, 50]
+            parameters2red['reduction__n_components'] = [None, 3, 10, 50]
+            parameters4red['reduction__n_components'] = [None, 3, 10, 50]
     
     if min_features_samples > 500:
         pars = [parameters1,
@@ -1011,6 +1011,7 @@ def get_all_classifications(preprocessing,
                 if cond == 'all' and prefix_dim == 3:
                     print('run', run_start, ', vectorization: all, acc_bal:',
                             balanced_accuracy_score(y_test, y_pred))
+
                 tmp_dict = {
                     'prefix': '_'.join(persfilename.stem.split('_')[2:]),
                     'dim': prefix_dim,
@@ -1021,7 +1022,10 @@ def get_all_classifications(preprocessing,
                     'recall': recall,
                     'run': runk + run_start,
                     'hash_train': compute_hash(train_test[0]),
-                    'hash_test': compute_hash(train_test[1])}
+                    'hash_test': compute_hash(train_test[1]),
+                    'birth_threshold': birth_threshold,
+                    'persistence_threshold': persistence_threshold
+                }
                 results_tmp.append(tmp_dict.copy())
 
     if len(results_tmp) == 0:

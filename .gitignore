@@ -173,3 +173,9 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 *.DS_Store
+/data_segmented/Airyscan
+/data_segmented/STED
+/data_processed/classification/github
+/data_processed/classification/onedrive
+TOBE_Deleted_bifiltration.ipynb
+TOBE_Deleted_changefilesToCleanGithub.ipynb

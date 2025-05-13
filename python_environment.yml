@@ -1,18 +1,20 @@
-name: conda_nuclei_311
 channels:
-  - defaults
+- conda-forge
+- defaults
 dependencies:
-  - gudhi
-  - matplotlib
-  - numpy==1.26.4
-  - pandas
-  - python=3.11
-  - scikit-image
-  - scikit-learn
-  - scipy
-  - seaborn
-  - napari
-  - ipython
-  - notebook
-  - jupyter
-  - xarray
+- scikit-image==0.25.2
+- jupyter==1.1.1
+- ipython==9.2.0
+- gudhi==3.11.0
+- napari==0.6.0
+- pandas==2.2.3
+- python=3.11
+- scikit-learn==1.6.1
+- numpy==1.26.4
+- seaborn==0.13.2
+- notebook==7.4.2
+- scipy==1.15.2
+- matplotlib==3.10.3
+- plotly==6.0.1
+name: conda_nuclei_311
+prefix: /opt/anaconda3/envs/conda_nuclei_311

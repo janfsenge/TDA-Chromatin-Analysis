@@ -4,6 +4,17 @@ This repository provides the Topological Data Analysis (TDA) part of the analysi
 
 For the analysis we consider embryonic stem (ES) and neural stem (NS) cells from near-super-resolution confocal (Airyscan) and super-resolution (STED) imaging of fixed cells.
 
+## **Installation**
+
+The python packages used can be installed using the provided `python_environment.yml` 
+via `conda env create -f python_environment.yml -n my_custom_env`
+
+## **Files**
+
+The files for the masked images can be find (until uploading them to a permanent location) here [container for masked images](https://ln5.sync.com/dl/801dd4930#tbhpqhvc-x3gcvjfa-hbucnxeq-6vz6m5k4)
+
+## **Citation**  
+
 ## **Structure**
 
 The repository consists of the following files:
@@ -52,6 +63,3 @@ While other dimensionality reduction techniques such as UMAP or tSNE also show c
 In summary, the performed analysis indicates the existence of stable and measurable differences between CTFC distributions in the ES and NS cells.
 
 
-## **Usage**  
-
-## **Citation**  
