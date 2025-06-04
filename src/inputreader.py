@@ -193,7 +193,8 @@ def persistence_writer_ensure_filesize(filepath,
 
 def read_persistence_files(data_input,
         preprocessing='clip_minmax_gaussian_2c_minmax',
-        return_keys=False):
+        return_keys=False,
+        include_subdirs=False):
     """
     This function reads in the persistence files.
     
@@ -209,15 +210,34 @@ def read_persistence_files(data_input,
     assert data_input.is_dir()
 
     if 'mask0' in preprocessing:
-        files = sorted([x for x in data_input.rglob('*.npz')
-            if 'persistence' in x.name
-            and preprocessing in x.name
-            and 'mask0' in x.name])
+        if include_subdirs:
+            # include subdirectories
+            files = sorted([x for x in data_input.rglob('*.npz')
+                if 'persistence' in x.name
+                and preprocessing in x.name])
+        else:
+            files = sorted([x for x in data_input.glob('*.npz')
+                if 'persistence' in x.name
+                and preprocessing in x.name
+                and 'mask0' in x.name])
     else:
-        files = sorted([x for x in data_input.rglob('*.npz')
-            if 'persistence' in x.name
-            and preprocessing in x.name
-            and 'mask0' not in x.name])
+        if include_subdirs:
+            # include subdirectories
+            files = sorted([x for x in data_input.rglob('*.npz')
+                if 'persistence' in x.name
+                and preprocessing in x.name])
+        else:
+            files = sorted([x for x in data_input.glob('*.npz')
+                if 'persistence' in x.name
+                and preprocessing in x.name
+                and 'mask0' not in x.name])
+
+    if 'gauss' not in preprocessing:
+        # only consider files with 'gauss' in the name
+        files = sorted([x for x in files if 'gauss' not in x.name])
+    if 'minmax' not in preprocessing:
+        # only consider files with 'minmax' in the name
+        files = sorted([x for x in files if 'minmax' not in x.name])
 
     # only consider splitfiles
     if np.any(['splitfiles' in x.name for x in files]):
@@ -227,7 +247,8 @@ def read_persistence_files(data_input,
         raise ValueError('No files found.')
 
     # get and sort the keys
-    keys = [[file, x] for file in files for x in np.load(file).keys() ]
+    keys = [[file, x] for file in files for x in np.load(file).keys()
+            if x != 'labels']
     vals = np.array([[int(x[1].split('_')[0].split('-')[1]),
                     int(x[1].split('_')[1].split('-')[1]),
                     int(x[1].split('_')[2].split('-')[1])]

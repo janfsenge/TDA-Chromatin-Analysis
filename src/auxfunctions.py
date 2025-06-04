@@ -85,9 +85,6 @@ def sanitize_persistence(diags: List[np.ndarray],
                 min_pers, max_birth, set_infval)
             for pers in diags]
 
-
-
-
 def finite_max(arraymax: ArrayLike) -> np.ndarray:
     """Exclude infinite classes"""
     arraymax = arraymax[arraymax != np.inf]
@@ -384,6 +381,7 @@ def grid_search_noscaling(X: np.ndarray,
                         #   n_components: Union(None, int) = None,
                           verbose: int = 0,
                           disable_tqdm: bool = True,
+                          random_state=None,
                           n_jobs=-1) -> pd.DataFrame:
     """
     Perform classifciation for several different classifiers with
@@ -417,16 +415,16 @@ def grid_search_noscaling(X: np.ndarray,
 
     # Determine the different steps in the pipeline.
     pipeline1 = Pipeline((
-        ('clf', RandomForestClassifier()),
+        ('clf', RandomForestClassifier(random_state=random_state)),
     ))
 
     pipeline1red = Pipeline((
-        ('reduction', PCA()),
-        ('clf', RandomForestClassifier()),
+        ('reduction', PCA(random_state=random_state)),
+        ('clf', RandomForestClassifier(random_state=random_state)),
     ))
 
     pipeline2red = Pipeline((
-        ('reduction', PCA()),
+        ('reduction', PCA(random_state=random_state)),
         ('clf', KNeighborsClassifier()),
     ))
 
@@ -435,12 +433,12 @@ def grid_search_noscaling(X: np.ndarray,
     ))
 
     pipeline4 = Pipeline((
-        ('clf', SVC()),
+        ('clf', SVC(random_state=random_state)),
     ))
 
     pipeline4red = Pipeline((
-        ('reduction', PCA()),
-        ('clf', SVC()),
+        ('reduction', PCA(random_state=random_state)),
+        ('clf', SVC(random_state=random_state)),
     ))
 
     parameters1 = {
@@ -524,13 +522,13 @@ def grid_search_noscaling(X: np.ndarray,
     if verbose > 0:
         print("starting Gridsearch")
 
-    # TODO: make it a "proper" sklearn pipeline
     # this is a bit manual in the sense, that we could
     # also define a proper Pipeline directly in sklearn
     best_scores = []
     for i in tqdm(range(len(pars)), disable=disable_tqdm):
         gs = GridSearchCV(pips[i], pars[i],
-                          scoring='accuracy', verbose=verbose, n_jobs=n_jobs)
+                          scoring='accuracy', verbose=verbose,
+                          n_jobs=n_jobs)
         gs = gs.fit(X, y)
         if verbose > 1:
             print('Best score on Split:', gs.best_score_,
@@ -539,7 +537,8 @@ def grid_search_noscaling(X: np.ndarray,
 
     besti = np.argmax(best_scores)
     gs = GridSearchCV(pips[besti], pars[besti],
-                      scoring='accuracy', verbose=verbose, n_jobs=n_jobs)
+                      scoring='accuracy', verbose=verbose,
+                      n_jobs=n_jobs)
     gs = gs.fit(X, y)
 
     if verbose > 0:
@@ -568,9 +567,11 @@ def compute_vectorizations_all(labels, pers_all,
         for dim in range(len(pers_all[prefix])):
             data = pers_all[prefix][dim]
             # data = [x[x[:, 1] != np.inf, :] for x in data]
+            print('A:', len(data[0]))
             data = sanitize_persistence(data,
                 min_pers=persistence_threshold,
                 max_birth=birth_threshold)
+            print('B:', len(data[0]))
 
             ecc_train.extend([data[i] for i in all_idx])
             ecc_lens_train.append(len([data[i] for i in all_idx]))
@@ -826,7 +827,8 @@ def get_all_classifications(preprocessing,
     nameappend='',
     saveasfile=True,
     n_jobs=6,
-    verbatim=False):
+    verbatim=False,
+    random_state=None):
     """
     Classify persistence diagrams using vectorizations and machine learning.
 
@@ -863,7 +865,9 @@ def get_all_classifications(preprocessing,
             return_keys=True)
         filename = np.unique([f.name[f.name.index('persistence'):]
                               for f in pers_keys[:,0] if 'persistence' in f.name])
+
         if len(filename) > 1:
+            print(filename)
             raise ValueError('More than one persistence file found')
         persfilename = Path(persfolder / filename[0])
     else:
@@ -895,7 +899,11 @@ def get_all_classifications(preprocessing,
         return None
     
     # get the splits
-    train_test_splits = same_size_training(labels, size=2*runs, train_size=int(train_percent)/100, seed=42)
+    train_test_splits = \
+        same_size_training(labels,
+            size=2*runs,
+            train_size=int(train_percent)/100,
+            seed=42)
     hashes = np.array([[compute_hash(tt[0]), compute_hash(tt[1])] for tt in train_test_splits])
 
     # now 
@@ -997,6 +1005,7 @@ def get_all_classifications(preprocessing,
 
                 gs = grid_search_noscaling(X_train, y_train.ravel(),
                         verbose=0, disable_tqdm=True,
+                        random_state=random_state,
                         n_jobs=n_jobs)
                 
                 accuracy_train = gs.score(X_train, y_train.ravel())
