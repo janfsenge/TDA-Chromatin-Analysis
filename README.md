@@ -13,7 +13,7 @@ via `conda env create -f python_environment.yml -n my_custom_env`
 
 The files for the masked images can be find (until uploading them to a permanent location) here [container for masked images](https://ln5.sync.com/dl/801dd4930#tbhpqhvc-x3gcvjfa-hbucnxeq-6vz6m5k4)
 
-## **Citation**  
+## **Citation**
 
 ## **Structure**
 
@@ -32,7 +32,7 @@ The repository consists of the following files:
 1) `pipeline*`: These files replicate the plots for the publication; not all of these files can be run directly. It depends on if the data used - in particular - the segmented images are available. Some of them might take a longer time to run. Opposed to the analysis for the paper, these files are jupyter notebook for a single preprocessing type, while we use larger pipelines to run classifications for several differen preprocessing steps there.
 2) `additionalAnalysis*`: Contains more explanations for chosen parameters, reasonings for preprocessing steps as well as comments for differen thresholds chosen for persistence etc. 
 
-## **Contents**  
+## **Contents**
 
 Robust tools from Persistent Homology (PH) were employed to analyze the distribution of CTCF in the nuclei of ES/NS cell types. The process as outlined in Table 1, initiates with a three-dimensional stack of grayscale images obtained from an AiryScan or a STED microscope. For the segmentation of the Airyscan images, individual nuclei are segmented independently per slice using the watershed algorithm guided by manually selected markers. Following manual calibration to all segmented images to reduce noise, 5 out of 96 images were excluded due to an absence of clear segmentation between them. As a result, 39 ES and 52 NS cells were obtained for analysis. For the STED images, segmentation can be automated due to higher resolution of the STED images. Additionally, due to a higher number of available samples, we can exclude those nuclei which are close to each other. Hence, a simplified segmentation utilizing only the projection in 2d along the z-direction and gathering the maximal values can be used. This yields 269 ES and 209 NS cells. Further implementation details and the raw and processed images can be found within the GitHub repository. 
 
@@ -51,7 +51,7 @@ The images show how we track features in dimension 0 (connected components) as w
 These three persistence diagrams are used as feature representations of the input image stack and are mapped to corresponding vectors using three primary vectorization techniques: Persistence Images, Betti Curves, and Persistence Statistics.
  
 These vectorized diagrams serve as input to Random Forest and Support Vector Machine (SVM) classifiers to distinguish between ES and NS nuclei. The machine learning methods utilized are described in citation [6]. Classification involves a 70/30 training-test split and 5-fold cross-validation, utilizing standard Python library scikit-learn. The average classification performance on the test set is approximately 90%, while on the training set, it is 100%. For detailed information on accuracy, precision, and recall:
-![Classification metrics](figures_plots/readme_classification_metrics)
+![Classification metrics](figures_plots/readme_classification_metrics.png)
 *Perfomance metrics of the classification of the different vectorizations of the persistence diagrams for the ES/NS cells for 90 different 70%-30% train-test set splits.*
 
 In addition to the supervised classification, Principal Component Analysis (PCA) was used to reduce the dimensionality of the obtained vectorization of persistent homology to three principal directions. Consequently, the vectorizations (persistence statistics, Betti curves, persistence image) which consist of 13, 250, and 400 parameters for each of the different homology dimensions are reduced to 3 parameters for each. After performing PCA, a separating hyperplane was computed using a SVM with a linear kernel. Alternatively put, a plane where (most) of the ES samples lie on one side, while (most of) NS samples lie on the opposite side of the plane. For the visualization, the hyperplane was further projected into two dimensions, aligning it with the abscissa axis in this space. Since the projection is selected along the separating hyperplane, the ES and NS samples will remain on opposite sides of the obtained line. Regarding the explained variance, for the Airyscan and Betti curve vectorizations, PCA retained only 53% of the variance. However, the linear hyperplane achieved an accuracy of 89%, demonstrating that despite some loss of information, the classification remains effective. In contrast, for the STED images and persistence image vectorizations, PCA preserved 99.99% of the variance, and classification via the hyperplane achieved 96% accuracy. Note that the presented procedure is entirely deterministic and stable with respect to noise.  To illustrate the projections for Airyscan:

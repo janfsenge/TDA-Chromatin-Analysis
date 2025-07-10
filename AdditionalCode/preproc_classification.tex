@@ -1,0 +1,20 @@
+\begin{tabular}{lrllll}
+\toprule
+prefix & dim & accuracy_balanced_sted & accuracy_balanced_airyscan & type_sted & type_airyscan \\
+\midrule
+raw & 2 & 98.37 & 89.39 & bc & pi \\
+raw & 3 & 97.35 & 91.48 & all & stat \\
+clip & 2 & 98.37 & 92.33 & all & stat \\
+clip & 3 & 98.37 & 92.52 & ent & bc \\
+scaled & 2 & 98.58 & 79.45 & ent & stat \\
+scaled & 3 & 98.78 & 84.85 & ent & ent \\
+gaussian2 scaled & 2 & 98.38 & 81.72 & all & ent \\
+gaussian2 scaled & 3 & 97.96 & 84.85 & all & ent \\
+gaussian4 scaled & 2 & 89.22 & 82.95 & pi & ent \\
+gaussian4 scaled & 3 & 93.28 & 83.14 & pi & ent \\
+scaled gaussian2 scaled & 2 & 97.98 & 85.04 & all & all \\
+scaled gaussian2 scaled & 3 & 98.18 & 87.12 & all & ecc \\
+scaled gaussian4 scaled & 2 & 98.16 & 85.89 & all & bc \\
+scaled gaussian4 scaled & 3 & 97.96 & 80.87 & ent & bc \\
+\bottomrule
+\end{tabular}
